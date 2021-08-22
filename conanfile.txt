@@ -1,0 +1,5 @@
+ [requires]
+ rapidxml/1.13
+
+ [generators]
+ cmake
