@@ -1,5 +1,7 @@
  [requires]
  rapidxml/1.13
+ fmt/8.0.0
+ libarchive/3.5.1
 
  [generators]
  cmake
