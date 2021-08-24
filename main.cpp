@@ -49,6 +49,7 @@ vector<Point> process_doc(xml_document<>* doc) {
 
 vector<Point> parse_mem(char* buf, size_t size) {
   xml_document<> doc;
+  cout << buf;
   doc.parse<0>(buf);
   return process_doc(&doc);
 }
