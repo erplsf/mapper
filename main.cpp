@@ -1,4 +1,5 @@
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include <archive.h>
@@ -16,7 +17,7 @@ struct Point {
   float longitude;
 };
 
-vector<Point> process_doc(xml_document<>* doc) {
+vector<Point> process_doc(xml_document<> *doc) {
   vector<Point> points;
   auto first_node = doc->first_node();
   if (strcmp(first_node->name(), "gpx") == 0) {
@@ -39,7 +40,7 @@ vector<Point> process_doc(xml_document<>* doc) {
           // printf("pt.lat -> %f\n", point.latitude);
           // printf("pt.lon -> %f\n", point.longitude);
           if (point.longitude > 0 && point.latitude > 0)
-              points.emplace_back(point);
+            points.emplace_back(point);
         }
       }
     }
@@ -47,9 +48,9 @@ vector<Point> process_doc(xml_document<>* doc) {
   return points;
 }
 
-vector<Point> parse_mem(char* buf, size_t size) {
+vector<Point> parse_mem(char *buf, size_t size) {
   xml_document<> doc;
-  cout << buf;
+  // cout << buf;
   doc.parse<0>(buf);
   return process_doc(&doc);
 }
@@ -61,10 +62,11 @@ vector<Point> parse_xml(char *filename) {
   return process_doc(&doc);
 }
 
-xml_document<>* build_kml() {
+xml_document<> *build_kml() {
   xml_document<> *doc = new xml_document<>();
   xml_node<> *node = doc->allocate_node(node_element, "kml");
-  xml_attribute<> *attr = doc->allocate_attribute("xmlns", "http://www.opengis.net/kml/2.2");
+  xml_attribute<> *attr =
+      doc->allocate_attribute("xmlns", "http://www.opengis.net/kml/2.2");
   node->append_attribute(attr);
   doc->append_node(node);
   auto don = doc->allocate_node(node_element, "Document");
@@ -75,9 +77,8 @@ xml_document<>* build_kml() {
   return doc;
 }
 
-xml_node<>* find_node(xml_node<> *doc, string name) {
-  for(auto node = doc->first_node(); node;
-      node = node->next_sibling()) {
+xml_node<> *find_node(xml_node<> *doc, string name) {
+  for (auto node = doc->first_node(); node; node = node->next_sibling()) {
     if (strcmp(node->name(), name.c_str())) {
       return node;
     } else {
@@ -99,13 +100,14 @@ void add_track(xml_document<> *doc, vector<Point> points, string num) {
     plm->append_node(line);
 
     line->append_node(doc->allocate_node(node_element, "tesselate", "0"));
-    line->append_node(doc->allocate_node(node_element, "altitudeMode", "clampToGround"));
+    line->append_node(
+        doc->allocate_node(node_element, "altitudeMode", "clampToGround"));
 
     auto coords = doc->allocate_node(node_element, "coordinates");
 
     string buffer;
     buffer.append("\n");
-    for(const auto &p: points) {
+    for (const auto &p : points) {
       auto ft = fmt::format("{},{},0 ", p.latitude, p.longitude);
       // cout << ft;
       buffer.append(ft);
@@ -117,7 +119,7 @@ void add_track(xml_document<> *doc, vector<Point> points, string num) {
   }
 }
 
-void read_archive(char* filename) {
+void read_archive(char *filename) {
   struct archive *a;
   struct archive_entry *entry;
   int r;
@@ -141,11 +143,11 @@ void read_archive(char* filename) {
       }
       printf("%s -> %zu\n", fname, fsize);
       // TODO: breaks on some files here, did the buffer size changed?
-      auto points = parse_mem((char*)buf_ptr.get(), bytes);
+      auto points = parse_mem((char *)buf_ptr.get(), bytes);
     }
     // archive_read_data_skip(a);  // Note 2
   }
-  r = archive_read_free(a);  // Note 3
+  r = archive_read_free(a); // Note 3
   if (r != ARCHIVE_OK)
     exit(1);
 }
