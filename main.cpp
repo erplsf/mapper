@@ -1,6 +1,7 @@
 #include <iostream>
 #include <memory>
 #include <vector>
+#include <optional>
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -27,20 +28,31 @@ vector<Point> process_doc(xml_document<> *doc) {
            x_segm = x_segm->next_sibling()) {
         for (auto *x_pt = x_segm->first_node(); x_pt;
              x_pt = x_pt->next_sibling()) {
-          Point point;
+          optional<float> lat, lon;
           // printf("nn -> %s\n", x_pt->name());
           for (auto *x_pt_attr = x_pt->first_attribute(); x_pt_attr;
                x_pt_attr = x_pt_attr->next_attribute()) {
-            if (strcmp(x_pt_attr->name(), "lat")) {
-              point.latitude = atof(x_pt_attr->value());
-            } else if (strcmp(x_pt_attr->name(), "lon")) {
-              point.longitude = atof(x_pt_attr->value());
+            if (strcmp(x_pt_attr->name(), "lat") == 0) {
+              // printf("lat %s\n", x_pt_attr->value());
+              lat = atof(x_pt_attr->value());
+            } else if (strcmp(x_pt_attr->name(), "lon") == 0) {
+              // printf("lon %s\n", x_pt_attr->value());
+              lon = atof(x_pt_attr->value());
             }
           }
           // printf("pt.lat -> %f\n", point.latitude);
           // printf("pt.lon -> %f\n", point.longitude);
-          if (point.longitude > 0 && point.latitude > 0)
+          if (lat && lon) {
+            Point point;
+            point.latitude = *lat;
+            point.longitude = *lon;
+            // if (point.longitude < 1 || point.latitude < 1) {
+            //   auto ft = fmt::format("{},{},0 ", point.latitude, point.longitude);
+            //   printf("ipd: %s\n", ft.c_str());
+            //   exit(1);
+            // }
             points.emplace_back(point);
+          }
         }
       }
     }
@@ -73,28 +85,50 @@ xml_document<> *build_kml() {
   node->append_node(don);
 
   don->append_node(doc->allocate_node(node_element, "name", "Rides"));
+  auto fol = doc->allocate_node(node_element, "Folder");
+  fol->append_node(doc->allocate_node(node_element, "name", "Rides"));
+  don->append_node(fol);
+
+  auto styl = doc->allocate_node(node_element, "Style");
+  styl->append_attribute(doc->allocate_attribute("id", "line-style"));
+  don->append_node(styl);
+
+  auto ls = doc->allocate_node(node_element, "LineStyle");
+  styl->append_node(ls);
+  ls->append_node(doc->allocate_node(node_element, "color", "ff00ffff")); // aabbggrr
+  // ls->append_node(doc->allocate_node(node_element, "colorMode", "normal"));
+  // ls->append_node(doc->allocate_node(node_element, "scale", "1"));
+  ls->append_node(doc->allocate_node(node_element, "width", "1.5"));
 
   return doc;
 }
 
 xml_node<> *find_node(xml_node<> *doc, string name) {
+  // printf("ol: %s\n", doc->name());
   for (auto node = doc->first_node(); node; node = node->next_sibling()) {
-    if (strcmp(node->name(), name.c_str())) {
+    // printf("il: %s\n", node->name());
+    // printf("%i\n", strcmp(node->name(), name.c_str()));
+    if (strcmp(node->name(), name.c_str()) == 0) {
       return node;
     } else {
-      return find_node(node, name);
+      auto fn = find_node(node, name);
+      if (fn) return fn;
     }
   }
-  return NULL;
 }
 
 void add_track(xml_document<> *doc, vector<Point> points, string num) {
-  auto node = find_node(doc, "Document");
+  auto node = find_node(doc, "Folder");
   if (node) {
+    // printf("ia: %s\n", node->name());
+    // exit(1);
     auto plm = doc->allocate_node(node_element, "Placemark");
     node->append_node(plm);
+    plm->append_node(doc->allocate_node(node_element, "styleUrl", "#line-style"));
 
-    plm->append_node(doc->allocate_node(node_element, "name", num.c_str()));
+    auto name = doc->allocate_string(num.c_str());
+    // string internal = num;
+    plm->append_node(doc->allocate_node(node_element, "name", name));
 
     auto line = doc->allocate_node(node_element, "LineString");
     plm->append_node(line);
@@ -107,8 +141,8 @@ void add_track(xml_document<> *doc, vector<Point> points, string num) {
 
     string buffer;
     buffer.append("\n");
-    for (const auto &p : points) {
-      auto ft = fmt::format("{},{},0 ", p.latitude, p.longitude);
+    for (const auto &point : points) {
+      auto ft = fmt::format("{},{},0 ", point.longitude, point.latitude);
       // cout << ft;
       buffer.append(ft);
     }
@@ -134,19 +168,19 @@ vector<vector<Point>> read_archive(char *filename) {
     exit(1);
   while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
     auto fname = archive_entry_pathname(entry);
-    if (strstr(fname, "activities/") && strcmp(fname, "activities/")) {
+    if (strstr(fname, "activities/") && strcmp(fname, "activities/") != 0) {
       // printf("%s\n", fname);
       size_t fsize = archive_entry_size(entry);
       auto buf_ptr = std::make_unique<uint8_t[]>(fsize+1); // add one byte for null char
       auto bytes = archive_read_data(a, buf_ptr.get(), fsize);
       if (bytes != fsize) {
-        printf("Read non-full file, exiting!\n");
+        // printf("Read non-full file, exiting!\n");
         exit(1);
       }
-      printf("%s -> %zu\n", fname, fsize);
+      // printf("%s -> %zu\n", fname, fsize);
       buf_ptr.get()[fsize] = '\0'; // manually add null-char
       auto points = parse_mem((char *)buf_ptr.get(), bytes);
-      printf("points: %li\n", points.size());
+      // printf("points: %li\n", points.size());
       all_points.emplace_back(points);
     }
     // archive_read_data_skip(a);  // Note 2
@@ -161,17 +195,19 @@ int main(int argc, char *argv[]) {
   if (argc == 2) {
 
     char *filename = argv[1];
+    xml_document<> *final_doc = build_kml();
     auto all_points = read_archive(filename);
+    int i = 0;
     for(const auto& points: all_points) {
-
+      i++;
+      auto name = fmt::format("Ride {}", i);
+      add_track(final_doc, points, name);
+      // if (i == halfsize) break;
     }
-    // auto points = parse_xml(filename);
-    // xml_document<> *final_doc = build_kml();
-    // add_track(final_doc, points, fmt::format("{}", 0));
-    // string buffer = "";
-    // rapidxml::print(back_inserter(buffer), *final_doc, 0);
-    // std::cout << buffer;
-    // delete final_doc;
+    string buffer = "";
+    rapidxml::print(back_inserter(buffer), *final_doc, 0);
+    std::cout << buffer;
+    delete final_doc;
   }
   return 0;
 }
