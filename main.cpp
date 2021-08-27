@@ -119,10 +119,12 @@ void add_track(xml_document<> *doc, vector<Point> points, string num) {
   }
 }
 
-void read_archive(char *filename) {
+vector<vector<Point>> read_archive(char *filename) {
   struct archive *a;
   struct archive_entry *entry;
   int r;
+
+  vector<vector<Point>> all_points;
 
   a = archive_read_new();
   archive_read_support_filter_all(a);
@@ -135,28 +137,34 @@ void read_archive(char *filename) {
     if (strstr(fname, "activities/") && strcmp(fname, "activities/")) {
       // printf("%s\n", fname);
       size_t fsize = archive_entry_size(entry);
-      auto buf_ptr = std::make_unique<uint8_t[]>(fsize);
+      auto buf_ptr = std::make_unique<uint8_t[]>(fsize+1); // add one byte for null char
       auto bytes = archive_read_data(a, buf_ptr.get(), fsize);
       if (bytes != fsize) {
         printf("Read non-full file, exiting!\n");
         exit(1);
       }
       printf("%s -> %zu\n", fname, fsize);
-      // TODO: breaks on some files here, did the buffer size changed?
+      buf_ptr.get()[fsize] = '\0'; // manually add null-char
       auto points = parse_mem((char *)buf_ptr.get(), bytes);
+      printf("points: %li\n", points.size());
+      all_points.emplace_back(points);
     }
     // archive_read_data_skip(a);  // Note 2
   }
   r = archive_read_free(a); // Note 3
   if (r != ARCHIVE_OK)
     exit(1);
+  return all_points;
 }
 
 int main(int argc, char *argv[]) {
   if (argc == 2) {
 
     char *filename = argv[1];
-    read_archive(filename);
+    auto all_points = read_archive(filename);
+    for(const auto& points: all_points) {
+
+    }
     // auto points = parse_xml(filename);
     // xml_document<> *final_doc = build_kml();
     // add_track(final_doc, points, fmt::format("{}", 0));
