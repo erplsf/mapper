@@ -1,7 +1,7 @@
 #include <iostream>
 #include <memory>
-#include <vector>
 #include <optional>
+#include <vector>
 
 #include <archive.h>
 #include <archive_entry.h>
@@ -18,7 +18,7 @@ struct Point {
   float longitude;
 };
 
-vector<Point> process_doc(xml_document<> *doc) {
+vector<Point> process_doc(xml_document<> *const doc) {
   vector<Point> points;
   auto first_node = doc->first_node();
   if (strcmp(first_node->name(), "gpx") == 0) {
@@ -43,13 +43,12 @@ vector<Point> process_doc(xml_document<> *doc) {
           // printf("pt.lat -> %f\n", point.latitude);
           // printf("pt.lon -> %f\n", point.longitude);
           if (lat && lon) {
-            Point point;
+            Point point{};
             point.latitude = *lat;
             point.longitude = *lon;
             // if (point.longitude < 1 || point.latitude < 1) {
-            //   auto ft = fmt::format("{},{},0 ", point.latitude, point.longitude);
-            //   printf("ipd: %s\n", ft.c_str());
-            //   exit(1);
+            //   auto ft = fmt::format("{},{},0 ", point.latitude,
+            //   point.longitude); printf("ipd: %s\n", ft.c_str()); exit(1);
             // }
             points.emplace_back(point);
           }
@@ -60,14 +59,14 @@ vector<Point> process_doc(xml_document<> *doc) {
   return points;
 }
 
-vector<Point> parse_mem(char *buf, size_t size) {
+vector<Point> parse_mem(char *const buf) {
   xml_document<> doc;
   // cout << buf;
   doc.parse<0>(buf);
   return process_doc(&doc);
 }
 
-vector<Point> parse_xml(char *filename) {
+vector<Point> parse_xml(char const *const filename) {
   file<> xmlFile(filename);
   xml_document<> doc;
   doc.parse<0>(xmlFile.data());
@@ -95,7 +94,8 @@ xml_document<> *build_kml() {
 
   auto ls = doc->allocate_node(node_element, "LineStyle");
   styl->append_node(ls);
-  ls->append_node(doc->allocate_node(node_element, "color", "ff00ffff")); // aabbggrr
+  ls->append_node(
+      doc->allocate_node(node_element, "color", "ff00ffff")); // aabbggrr
   // ls->append_node(doc->allocate_node(node_element, "colorMode", "normal"));
   // ls->append_node(doc->allocate_node(node_element, "scale", "1"));
   ls->append_node(doc->allocate_node(node_element, "width", "1.5"));
@@ -103,30 +103,31 @@ xml_document<> *build_kml() {
   return doc;
 }
 
-xml_node<> *find_node(xml_node<> *doc, string name) {
-  // printf("ol: %s\n", doc->name());
+xml_node<> *find_node(xml_node<> const *const doc, string const name) {
   for (auto node = doc->first_node(); node; node = node->next_sibling()) {
-    // printf("il: %s\n", node->name());
-    // printf("%i\n", strcmp(node->name(), name.c_str()));
     if (strcmp(node->name(), name.c_str()) == 0) {
       return node;
     } else {
       auto fn = find_node(node, name);
-      if (fn) return fn;
+      if (fn)
+        return fn;
     }
   }
+  return nullptr;
 }
 
-void add_track(xml_document<> *doc, vector<Point> points, string num) {
+void add_track(xml_document<> *const doc, vector<Point> const points,
+               string_view const num) {
   auto node = find_node(doc, "Folder");
   if (node) {
     // printf("ia: %s\n", node->name());
     // exit(1);
     auto plm = doc->allocate_node(node_element, "Placemark");
     node->append_node(plm);
-    plm->append_node(doc->allocate_node(node_element, "styleUrl", "#line-style"));
+    plm->append_node(
+        doc->allocate_node(node_element, "styleUrl", "#line-style"));
 
-    auto name = doc->allocate_string(num.c_str());
+    auto name = doc->allocate_string(num.data());
     // string internal = num;
     plm->append_node(doc->allocate_node(node_element, "name", name));
 
@@ -153,33 +154,40 @@ void add_track(xml_document<> *doc, vector<Point> points, string num) {
   }
 }
 
-vector<vector<Point>> read_archive(char *filename) {
-  struct archive *a;
-  struct archive_entry *entry;
-  int r;
+vector<vector<Point>> read_archive(const char *filename) {
+  archive *a = archive_read_new();
+  archive_entry *entry = nullptr;
 
   vector<vector<Point>> all_points;
 
-  a = archive_read_new();
   archive_read_support_filter_all(a);
   archive_read_support_format_all(a);
-  r = archive_read_open_filename(a, filename, 10240); // Note 1
-  if (r != ARCHIVE_OK)
+  constexpr int BLOCK_SIZE = 10240;
+  int r = archive_read_open_filename(a, filename, BLOCK_SIZE); // Note 1
+  if (r != ARCHIVE_OK) {
+    // TODO: add error extraction
     exit(1);
+  }
   while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
     auto fname = archive_entry_pathname(entry);
-    if (strstr(fname, "activities/") && strcmp(fname, "activities/") != 0) {
+    if (strstr(fname, "activities/") != nullptr &&
+        strcmp(fname, "activities/") != 0) {
       // printf("%s\n", fname);
-      size_t fsize = archive_entry_size(entry);
-      auto buf_ptr = std::make_unique<uint8_t[]>(fsize+1); // add one byte for null char
-      auto bytes = archive_read_data(a, buf_ptr.get(), fsize);
+      auto fsize = archive_entry_size(entry);
+      auto buffer = std::make_unique<uint8_t[]>(
+          fsize + 1); // NOLINT: We want array of dynamic size plus one byte for
+                      // null terminator
+      auto bytes = archive_read_data(a, buffer.get(), fsize);
+      assert(bytes == fsize);
       if (bytes != fsize) {
         // printf("Read non-full file, exiting!\n");
+        // TODO: add error
         exit(1);
       }
       // printf("%s -> %zu\n", fname, fsize);
-      buf_ptr.get()[fsize] = '\0'; // manually add null-char
-      auto points = parse_mem((char *)buf_ptr.get(), bytes);
+      buffer.get()[fsize] = '\0'; // manually add null-char
+      auto points = parse_mem(reinterpret_cast<char *>(
+          buffer.get())); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
       // printf("points: %li\n", points.size());
       all_points.emplace_back(points);
     }
@@ -187,18 +195,18 @@ vector<vector<Point>> read_archive(char *filename) {
   }
   r = archive_read_free(a); // Note 3
   if (r != ARCHIVE_OK)
+    // TODO: add error extraction
     exit(1);
   return all_points;
 }
 
-int main(int argc, char *argv[]) {
+int main(int const argc, char const *const argv[]) {
   if (argc == 2) {
-
-    char *filename = argv[1];
+    string_view filename = argv[1];
     xml_document<> *final_doc = build_kml();
-    auto all_points = read_archive(filename);
+    auto all_points = read_archive(filename.data());
     int i = 0;
-    for(const auto& points: all_points) {
+    for (const auto &points : all_points) {
       i++;
       auto name = fmt::format("Ride {}", i);
       add_track(final_doc, points, name);
