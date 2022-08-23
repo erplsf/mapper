@@ -5,10 +5,13 @@
 
 #include <archive.h>
 #include <archive_entry.h>
-#include <fmt/core.h>
+
 #include <rapidxml/rapidxml_utils.hpp>
 
 #include "rapidxml_ext.h"
+
+#define FMT_HEADER_ONLY
+#include <fmt/core.h>
 
 using namespace std;
 using namespace rapidxml;
